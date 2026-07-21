@@ -40,11 +40,17 @@ def validate(ctx, witness_path="examples/cwt_witness.json"):
 
     assert message == expected, "circuit mdoc-style message does not match the reference"
 
+    # independent reference #1: the blind_msg computed by rust-blind-rsa-signatures
+    assert blinded == ctx["expected_blind_msg"], \
+        "circuit blinded output does not match rust-blind-rsa-signatures' blind_msg"
+
+    # independent reference #2: python re-computation of EM * r^e mod n
     mhash = hashlib.sha256(message).digest()
     em = int.from_bytes(emsa_pss_encode(mhash, ctx["blind_salt"]), "big")
     expected_blinded = (em * pow(ctx["r"], ctx["notary_e"], ctx["notary_n"])) % ctx["notary_n"]
     assert blinded == expected_blinded.to_bytes(EM_LEN, "big"), \
-        "circuit blinded output does not match the reference"
+        "circuit blinded output does not match the python reference"
 
-    print("mdoc-style message and blinded output match the circuit witness")
+    print("mdoc-style message and blinded output match the circuit witness "
+          "(cross-checked against rust-blind-rsa-signatures)")
     return message, blinded

@@ -6,3 +6,5 @@ __pycache__/
 .vscode
 .DS_Store
 log_compiling_cwt.txt
+blind_ctx.json
+mdoc_presentation.json

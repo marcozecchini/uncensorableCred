@@ -14,3 +14,5 @@ cwt_proof.json
 cwt_public.json
 cbor_redact_js/
 cbor_redact.circom
+cose_real_js/
+cose_real.circom

@@ -1,1 +1,2 @@
 cryptography>=44.0
+cbor2>=5.6  # test-only: differential CBOR codec test (examples/unit_test/cbor/cbor_diff.py)
