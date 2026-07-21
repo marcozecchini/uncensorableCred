@@ -93,10 +93,12 @@ string, 3 = text string, 4 = array, 5 = map) and 5 bits carrying the
 **argument** (the integer value, the string byte-length, or the container
 element count), possibly extended by 1/2/4 argument bytes for larger values.
 Strings are followed by their content bytes; containers are followed by
-their child items (maps alternate key, value). *Canonical* CBOR (the only
+their child items (maps alternate key, value).
+
+*Canonical* CBOR (the only
 form we accept) uses definite lengths and the shortest possible head, so
 every value has exactly one encoding. The signed Green Pass payload is one
-nested CBOR item:
+nested CBOR item like the following one:
 
 ```
 a4                          map(4)                 ← root, the CWT claims
@@ -115,7 +117,8 @@ a4                          map(4)                 ← root, the CWT claims
 The **parse tree** is this structure flattened into an *item table* in
 document order: one row per item with its byte offset, major type, argument,
 head length, end-of-subtree offset, parent item and position among the
-parent's children (48 rows for the Green Pass). A recursive parser is
+parent's children (48 rows for the Green Pass). 
+A recursive parser is
 impractical inside an arithmetic circuit, so the roles are split: the
 *prover* supplies the table as an untrusted witness (step 1) and the
 *circuit* verifies it is **the unique gap-free decomposition** of the signed
@@ -127,6 +130,7 @@ child starting where the previous ends, last child ending at the container's
 end, child count matching the head argument). Under these constraints no
 boundary can be shifted and no item skipped or invented — a malicious prover
 cannot, e.g., re-interpret bytes inside a name string as a fake `dob` field.
+
 The *subject map* whose entries get committed is selected by a public path
 of map keys (`-260, 1` above); its entry keys and values are exposed to the
 digest stage as raw CBOR spans, so a value can be a whole subtree (the
