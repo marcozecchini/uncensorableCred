@@ -1,0 +1,8 @@
+/target
+/venv
+__pycache__/
+*.pem
+*.bin
+.vscode
+.DS_Store
+log_compiling_cwt.txt

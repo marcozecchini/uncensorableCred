@@ -1,0 +1,48 @@
+[package]
+name = "volonym"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+memory-stats = "1.2"
+anyhow = "1.0.75"
+bigdecimal = "0.4.2"
+bincode = "1.3.3"
+blake3 = "1.5.0"
+byteorder = "1.5.0"
+ff = { version = "0.13", features = ["derive"] }
+hex = "0.4.3"
+itertools = "0.11.0"
+lazy_static = "1.4.0"
+nalgebra = "0.32.3"
+ndarray = "0.15.6"
+nshare = "0.9.0"
+num-bigint = "0.4.4"
+num-integer = "0.1.45"
+num-traits = "0.2.17"
+# polynomen = "1.1.0"
+# polynomial = "0.2.6"
+rand = "0.8.5"
+getrandom = { version = "0.2", features = ["js"] }
+serde = { version = "1.0.193", features = ["derive"] }
+# scuttlebutt = { path = "./swanky/scuttlebutt" }
+wasm-bindgen = "0.2.89"
+rand_chacha = "0.3.1"
+# ark-bn254 = "0.4.0"
+halo2_curves = { git = "https://github.com/han0110/halo2curves", branch = "feature/hash-to-curve", package = "halo2curves" }
+# num-modular = "0.6.1"
+
+[dev-dependencies]
+criterion = { version = "0.4", default-features = false }
+
+[[bench]]
+name = "benchmark"
+harness = false
+
+[[bin]]
+name = "codeparams"
+path = "src/codeparams/mod.rs"

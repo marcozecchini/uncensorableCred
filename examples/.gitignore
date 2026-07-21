@@ -1,0 +1,16 @@
+node_modules/
+package-lock.json
+*.r1cs
+*.zkey
+*.wasm
+*.wtns
+witness.json
+cwt_test.circom
+cwt_test_cpp/
+cwt_test_js/
+cwt_input.json
+cwt_witness.json
+cwt_proof.json
+cwt_public.json
+cbor_redact_js/
+cbor_redact.circom
