@@ -298,6 +298,57 @@ same signed digest list without re-running the circuit. The
 issuer signature of the real credential is verified in-circuit against the
 public key of the official signing certificate.
 
+## Running with Groth16 / rapidsnark instead of VOLE
+
+Passing `--proof snark` replaces the VOLE proof with a Groth16 one: the
+driver runs `examples/setup_groth_cwt.sh` (`snarkjs groth16 setup` against
+the `PTAU` powers-of-tau file) and then `examples/prove_groth_cwt.sh`, which
+uses the native [rapidsnark](https://github.com/iden3/rapidsnark) prover when
+`RAPIDSNARK` points to its binary and falls back to `snarkjs groth16 prove`
+otherwise. Two environment details matter:
+
+* the snarkjs **setup** needs a much larger Node.js heap than the default
+  ~4 GB for circuits of this size (the r1cs alone is ~600 MB) — without
+  `NODE_OPTIONS` it dies with *JavaScript heap out of memory* and leaves a
+  truncated `.zkey` behind;
+* the rapidsnark prover pads its output JSON files with trailing NUL bytes,
+  which `snarkjs groth16 verify` rejects — strip them before verifying.
+
+```bash
+# end-to-end pipeline on the EUDCC green pass, proving with rapidsnark
+NODE_OPTIONS=--max-old-space-size=524288 \
+PTAU=~/28.ptau \
+RAPIDSNARK=/path/to/rapidsnark/package/bin/prover \
+python main.py --proof snark --eudcc examples/unit_test/cose_real/eudcc_CO1.json
+
+# strip rapidsnark's NUL padding, then verify the proof with snarkjs
+for f in examples/cwt_proof.json examples/cwt_public.json; do
+  tr -d '\000' < "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+done
+snarkjs zkey export verificationkey examples/cwt_test.zkey examples/cwt_vkey.json
+snarkjs groth16 verify examples/cwt_vkey.json examples/cwt_public.json examples/cwt_proof.json
+```
+
+(Omit `--eudcc` to run the same flow on the synthetic 8-claim credential.)
+
+### Measured results on the green pass (EUDCC `CO1`)
+
+Measured on a DellR760 256-core / 1 TB RAM machine (rapidsnark peak RSS via
+`/usr/bin/time -v`):
+
+| Phase                                  | Result                          |
+|----------------------------------------|---------------------------------|
+| r1cs circuit size                      | 629.6 MB                        |
+| Groth16 setup (snarkjs, `28.ptau`)     | 4 m 51 s                        |
+| Proving (rapidsnark, wall clock)       | **6.4 s** (54.7 s CPU, ~1078 %) |
+| Prover peak RAM (max RSS)              | **~2.9 GiB** (3,017,036 kB)     |
+| `snarkjs groth16 verify`               | OK                              |
+
+The rest of the pipeline is unchanged: the 4 `eu_dgc_v1` entries are
+committed in the digest list, the notary blind-signs the blinded message, the
+unblinded RSA-PSS signature is independently re-verified, and the default
+presentation disclosing 2/4 entries verifies against the signed digest list.
+
 ## Custom Runs
 
 ```bash
