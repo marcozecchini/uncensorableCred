@@ -1,5 +1,5 @@
 <div align="center">
-<h2>Uncensorable Credentials: ZK Redaction of CWT Credentials with Blind RSA-PSS Notarization</h2>
+<h2>Uncensorable Anonymous Credentials</h2>
 
 This repository implements a pipeline in which the holder of a **CWT
 credential (RFC 8392)** — encoded in CBOR and signed as a whole by its issuer
