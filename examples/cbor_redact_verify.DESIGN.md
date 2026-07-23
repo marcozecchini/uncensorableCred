@@ -241,10 +241,11 @@ Project layout:
   the notary blind signature, unblinding and verification.
 * `examples/unit_test/cbor/` — unit test in the same style as the `emsa`/`mgf`
   ones (Python reference → `input.json`/`expected_output.json` → `test.sh`).
-* `examples/unit_test/cose_real/` — in-circuit `CoseSign1Verify` run against a
-  real EU Digital COVID Certificate (PS256, RSA-2048) from the official
-  `dgc-testdata` dataset; signature verification only, since the EUDCC claims
-  payload (integer keys, nested maps) is outside the minimal CBOR subset.
+* `examples/unit_test/cose_real/` — in-circuit `CborRedactVerify` run against
+  a real EU Digital COVID Certificate (PS256, RSA-2048) from the official
+  `dgc-testdata` dataset: issuer signature verification, parse tree of the
+  real payload, path selection at `-260,1` and salted digest list, checked
+  against the Python reference with deterministic salts.
 
 ## 5. Resolved design points
 

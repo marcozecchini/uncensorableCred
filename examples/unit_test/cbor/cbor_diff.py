@@ -139,9 +139,64 @@ def test_cbor2(script_dir):
     print("3b. real EUDCC payload: decode == cbor2, re-encode byte-identical PASSED")
 
 
+# ------------------- 4. subject extraction + digest list vs cbor2/hashlib
+def test_subject_digests(script_dir):
+    """Differential check of the -260,1 subject selection and of the salted
+    digest list on the real EUDCC: our pipeline (build_item_table +
+    find_subject + raw spans + mso_message) against a fully independent
+    computation that navigates with cbor2, re-encodes each key/value with
+    cbor2.dumps and rebuilds the digest list inline from its specification
+    (nsLen || ns || nFields || (digestID || SHA256(preimage))*, preimage =
+    digestID || random16 || idLen || key padded || valLen || value padded).
+    The list format itself is ours by design, so the independence lies in
+    the navigation, extraction, encoding and hashing code paths."""
+    try:
+        import cbor2
+    except ImportError:
+        print("4. subject/digest differential: SKIPPED (pip install cbor2 to enable)")
+        return
+
+    import hashlib
+    from cwt_redact.cbor_tree import (build_item_table, find_subject,
+                                      mso_message, raw, subject_entries)
+
+    eudcc = script_dir.parent / "cose_real" / "eudcc_CO1.json"
+    payload = cbor2.loads(bytes.fromhex(json.loads(eudcc.read_text())["COSE"])).value[2]
+    ns = b"org.iso.18013.5.1.acts"
+    randoms = [bytes((23 * i + 7 * j) % 256 for j in range(16)) for i in range(4)]
+
+    # ours
+    items = build_item_table(payload)
+    subj, _ = find_subject(payload, items, [-260, 1])
+    entries = subject_entries(items, subj)
+    max_k = max(items[k]["end"] - items[k]["off"] for k, _ in entries)
+    max_v = max(items[v]["end"] - items[v]["off"] for _, v in entries)
+    ours = mso_message(payload, items, entries, randoms, ns, max_k, max_v)
+
+    # independent: navigate and re-encode with cbor2, hash with hashlib
+    subject = cbor2.loads(payload)[-260][1]
+    assert isinstance(subject, dict) and len(subject) == len(entries), \
+        "subject map mismatch at path -260,1"
+    theirs = bytes([len(ns)]) + ns + bytes([len(subject)])
+    for i, (key, value) in enumerate(subject.items()):
+        kraw = cbor2.dumps(key)
+        vraw = cbor2.dumps(value)
+        pre = (bytes([i]) + randoms[i]
+               + bytes([len(kraw)]) + kraw + b"\x00" * (max_k - len(kraw))
+               + bytes([len(vraw)]) + vraw + b"\x00" * (max_v - len(vraw)))
+        theirs += bytes([i]) + hashlib.sha256(pre).digest()
+    assert ours == theirs, "digest list differs from the cbor2-based computation"
+    # the extracted raw spans must also match cbor2's independent re-encoding
+    for (ki, vi), (key, value) in zip(entries, subject.items()):
+        assert raw(payload, items, ki) == cbor2.dumps(key), "key span differs"
+        assert raw(payload, items, vi) == cbor2.dumps(value), "value span differs"
+    print("4. EUDCC subject at -260,1 + salted digest list vs cbor2/hashlib PASSED")
+
+
 if __name__ == "__main__":
     here = Path(__file__).resolve().parent
     test_rfc8949()
     test_roundtrip()
     test_cbor2(here)
+    test_subject_digests(here)
     print("CBOR codec differential test PASSED")

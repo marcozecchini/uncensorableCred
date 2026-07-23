@@ -25,7 +25,9 @@ runs a Circom circuit that:
    the prover supplies the item table and the circuit checks it is the unique
    gap-free decomposition of the signed bytes; a public **path** of map keys
    selects the *subject map* to redact (`[]` = the flat claims map itself,
-   `-260,1` = the `eu_dgc_v1` map of an EU Digital COVID Certificate);
+   `-260,1` = the `eu_dgc_v1` map of an EU Digital COVID Certificate — see
+   *Background: the CBOR parse tree* below for why the path is public and
+   how it is checked);
 3. commits to every subject entry with a **salted digest list** in the style
    of the ISO/IEC 18013-5 MobileSecurityObject `valueDigests` (*not* a
    standards-compliant MSO): each entry is hashed as an
@@ -131,10 +133,35 @@ end, child count matching the head argument). Under these constraints no
 boundary can be shifted and no item skipped or invented — a malicious prover
 cannot, e.g., re-interpret bytes inside a name string as a fake `dob` field.
 
-The *subject map* whose entries get committed is selected by a public path
-of map keys (`-260, 1` above); its entry keys and values are exposed to the
-digest stage as raw CBOR spans, so a value can be a whole subtree (the
-entire `nam` map counts as one redactable value).
+The *subject map* whose entries get committed is selected by a **public path
+of map keys**. A credential is a tree of nested maps, and the claims worth
+disclosing are not necessarily at the top level: in the Green Pass the root
+map only carries metadata (`exp`, `iat`, `iss`), while the personal data
+lives two levels down, under key `-260` and then key `1`. The path is the
+sequence of keys to follow from the root to the map whose entries become the
+redactable claims:
+
+* path `[]` (empty) — the subject is the root map itself: the case of the
+  flat synthetic CWT, whose claims sit directly at the top level;
+* path `-260,1` — "from the root follow key `-260`, then key `1`": lands on
+  the `eu_dgc_v1` map, whose 4 entries (`v`, `nam`, `ver`, `dob`) become the
+  claims. Any map is addressable this way (`--path` on the CLI): pointing at
+  `nam` instead would make the individual name components the claims.
+
+The path must be **public** for the statement to be meaningful: were it a
+private witness, the proof would only say "these digests come from *some*
+map inside the credential", and a malicious prover could commit to the
+entries of a different map than the verifier expects. With the path as a
+public input the statement becomes "the digests are the entries of the map
+at exactly *this* path": in-circuit, at every hop, the raw CBOR bytes of the
+public path key (`39 01 03` for `-260`, `01` for `1`) are matched against
+the actual key item found in the verified tree. Privacy-wise the path only
+reveals *which point of the schema* is being used — the same for every Green
+Pass — never any value.
+
+The subject map's entry keys and values are exposed to the digest stage as
+raw CBOR spans, so a value can be a whole subtree (the entire `nam` map
+counts as one redactable value).
 
 ### The chain, link by link
 
@@ -389,7 +416,7 @@ circuit against a Python reference implementation:
 
 ```bash
 cd examples/unit_test/cbor      && bash test.sh   # CBOR parse + mdoc redaction
-cd examples/unit_test/cose_real && bash test.sh   # COSE_Sign1 verify on a REAL credential
+cd examples/unit_test/cose_real && bash test.sh   # sig + parse tree + digests on a REAL credential
 cd examples/unit_test/emsa      && bash test.sh   # EMSA-PSS encoding
 cd examples/unit_test/mgf       && bash test.sh   # MGF1 mask generation
 ```
@@ -403,23 +430,30 @@ against a Python reference.
 The hand-rolled CBOR codec itself is differentially tested against
 independent references (`examples/unit_test/cbor/cbor_diff.py`): the RFC 8949
 Appendix A test vectors, head-size boundary roundtrips, 500 seeded random
-structures compared with the `cbor2` library, and the real EUDCC payload
-(decode agreement with `cbor2` plus byte-identical canonical re-encoding):
+structures compared with the `cbor2` library, the real EUDCC payload
+(decode agreement with `cbor2` plus byte-identical canonical re-encoding),
+and — on the real EUDCC — the subject extraction at path `-260,1` and the
+salted digest list, recomputed independently by navigating with `cbor2`,
+re-encoding every key/value with `cbor2.dumps` and rebuilding the list
+inline from its specification with `hashlib`:
 
 ```bash
 cd examples/unit_test/cbor && python cbor_diff.py
 ```
 
-The `cose_real` test verifies **in-circuit** the issuer RSA-PSS signature of a
-real-world credential downloaded from the internet: the official EU Digital
-COVID Certificate test vector `CO1` ("VALID: RSA 2048 key", alg PS256) from
-the public [`dgc-testdata`](https://github.com/eu-digital-green-certificates/dgc-testdata)
+The `cose_real` test runs the **whole redaction stage in-circuit**
+(`CborRedactVerify`, i.e. everything but the blinding) on a real-world
+credential downloaded from the internet: the official EU Digital COVID
+Certificate test vector `CO1` ("VALID: RSA 2048 key", alg PS256) from the
+public [`dgc-testdata`](https://github.com/eu-digital-green-certificates/dgc-testdata)
 dataset, vendored in `examples/unit_test/cose_real/eudcc_CO1.json`. The EUDCC
 is a production-format CWT in COSE_Sign1 signed with RSA-PSS/SHA-256, i.e.
-exactly the issuer scheme of this pipeline. Only the signature-verification
-stage runs on it: the EUDCC claims payload uses integer keys and nested maps,
-which are outside the minimal CBOR subset supported by the redaction parser
-(flat maps with text-string keys).
+exactly the issuer scheme of this pipeline. The test verifies in-circuit the
+issuer signature (real protected header with `kid`, PSS salt recovered from
+the signature), the parse tree of the real 307-byte payload (48 items), the
+public-path selection of the `eu_dgc_v1` map at `-260,1`, and the salted
+digest list over its 4 entries, compared byte-per-byte against the Python
+reference (deterministic salts, fixed test vector).
 
 # Acknowledgements
 
@@ -432,6 +466,5 @@ This project builds upon open-source software including:
   that exposes the PSS salt in `BlindingResult`;
 * the Circom bigint/RSA-PSS circuits and the blind RSA-PSS experiment
   pipeline of [`blindRSANotary`](https://github.com/marcozecchini/blindRSANotary)
-  (NDSS 2026 paper "ACTS: Attestations of Contents in TLS Sessions"), from
-  which this repository forks;
+  (NDSS 2026 paper "ACTS: Attestations of Contents in TLS Sessions");
 * [`circomlib`](https://github.com/iden3/circomlib) (iden3).
