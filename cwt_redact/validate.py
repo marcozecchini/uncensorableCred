@@ -38,7 +38,7 @@ def validate(ctx, witness_path="examples/cwt_witness.json"):
     message = bytes(int(x) for x in wit[1:1 + mlen])
     blinded = bytes(int(x) for x in wit[1 + mlen:1 + mlen + EM_LEN])
 
-    assert message == expected, "circuit mdoc-style message does not match the reference"
+    assert message == expected, "circuit SD-JWT signing input does not match the reference"
 
     # independent reference #1: the blind_msg computed by rust-blind-rsa-signatures
     assert blinded == ctx["expected_blind_msg"], \
@@ -51,6 +51,6 @@ def validate(ctx, witness_path="examples/cwt_witness.json"):
     assert blinded == expected_blinded.to_bytes(EM_LEN, "big"), \
         "circuit blinded output does not match the python reference"
 
-    print("mdoc-style message and blinded output match the circuit witness "
+    print("SD-JWT signing input and blinded output match the circuit witness "
           "(cross-checked against rust-blind-rsa-signatures)")
     return message, blinded

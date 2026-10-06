@@ -1,6 +1,7 @@
 pragma circom 2.0.3;
 
 include "cbor_redact_verify.circom";
+include "sd_jwt_envelope.circom";
 include "hash_and_blind.circom";
 
 /**
@@ -22,9 +23,10 @@ include "hash_and_blind.circom";
  * subject) and real EU Digital COVID Certificates (path -260 -> 1 selects
  * the eu_dgc_v1 map).
  */
-template CwtRedactBlind(w, k, eBits, mgfCount, payloadLen, protLen, maxItems, nFields, maxKeyLen, maxValueLen, pathDepth, maxPathKeyLen, nsLen) {
+template CwtRedactBlind(w, k, eBits, mgfCount, payloadLen, protLen, maxItems, nFields, maxKeyLen, maxValueLen, pathDepth, maxPathKeyLen, nsLen, hdrB64Len) {
     var bpl = w / 8;
-    var messageLen = 2 + nsLen + nFields * 33;
+    var digestListLen = 2 + nsLen + nFields * 33;
+    var messageLen = sdJwtSigningInputLen(nFields, hdrB64Len);
     var pdN = pathDepth < 1 ? 1 : pathDepth;
 
     // --- credential + issuer-verification inputs ---
@@ -60,7 +62,7 @@ template CwtRedactBlind(w, k, eBits, mgfCount, payloadLen, protLen, maxItems, nF
     signal input notaryModulus[k];
 
     // --- outputs ---
-    signal output message[messageLen];      // redacted mdoc-style serialization
+    signal output message[messageLen];      // SD-JWT JWS signing input
     signal output blinded[k * bpl];         // blinded PSS message for the notary
 
     // 1) verify issuer signature, parse tree, build redacted mdoc-style message
@@ -96,9 +98,18 @@ template CwtRedactBlind(w, k, eBits, mgfCount, payloadLen, protLen, maxItems, nF
         red.pathValItem[h] <== pathValItem[h];
     }
 
-    // 2) hash + blind the mdoc-style message with the UNMODIFIED template
+    // 2) assemble the SD-JWT JWS signing input from the salted digests
+    //    (digest i sits at bytes [2+nsLen+i*33+1 .. +32] of the digest list)
+    var HDR_B64[hdrB64Len] = [{{HDR_B64_BYTES}}];
+    component env = SdJwtSigningInput(nFields, hdrB64Len);
+    for (var i = 0; i < nFields; i++)
+        for (var j = 0; j < 32; j++)
+            env.digest[i][j] <== red.message[2 + nsLen + i * 33 + 1 + j];
+    for (var j = 0; j < hdrB64Len; j++) env.hdrB64[j] <== HDR_B64[j];
+
+    // 3) hash + blind the signing input with the UNMODIFIED template
     component blinder = Sha256BlindRSAPSS(w, k, eBits, mgfCount, messageLen);
-    for (var j = 0; j < messageLen; j++) blinder.message[j] <== red.message[j];
+    for (var j = 0; j < messageLen; j++) blinder.message[j] <== env.out[j];
     for (var i = 0; i < k; i++) {
         blinder.salt[i] <== blindSalt[i];
         blinder.r[i] <== r[i];
@@ -106,8 +117,8 @@ template CwtRedactBlind(w, k, eBits, mgfCount, payloadLen, protLen, maxItems, nF
         blinder.modulus[i] <== notaryModulus[i];
     }
 
-    for (var j = 0; j < messageLen; j++) message[j] <== red.message[j];
+    for (var j = 0; j < messageLen; j++) message[j] <== env.out[j];
     for (var j = 0; j < k * bpl; j++) blinded[j] <== blinder.blinded[j];
 }
 
-component main { public [issuerExp, issuerModulus, namespace, pathKeyLen, pathKey, notaryExp, notaryModulus] } = CwtRedactBlind(64, 32, 17, 7, {{PAYLOAD_LEN}}, {{PROT_LEN}}, {{MAX_ITEMS}}, {{N_FIELDS}}, {{MAX_KEY_LEN}}, {{MAX_VALUE_LEN}}, {{PATH_DEPTH}}, {{MAX_PATH_KEY_LEN}}, {{NS_LEN}});
+component main { public [issuerExp, issuerModulus, namespace, pathKeyLen, pathKey, notaryExp, notaryModulus] } = CwtRedactBlind(64, 32, 17, 7, {{PAYLOAD_LEN}}, {{PROT_LEN}}, {{MAX_ITEMS}}, {{N_FIELDS}}, {{MAX_KEY_LEN}}, {{MAX_VALUE_LEN}}, {{PATH_DEPTH}}, {{MAX_PATH_KEY_LEN}}, {{NS_LEN}}, {{HDR_B64_LEN}});

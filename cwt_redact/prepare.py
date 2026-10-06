@@ -11,7 +11,8 @@ import secrets
 import subprocess
 from pathlib import Path
 
-from .cbor_tree import mso_message, raw, tree_witness
+from .cbor_tree import (SDJWT_HEADER, b64url, mso_message, raw,
+                        sdjwt_signing_input, tree_witness)
 from .issue import load_or_generate_key
 
 W_LIMB = 64
@@ -74,13 +75,15 @@ def prepare(cred, path=(),
     notary = load_or_generate_key(notary_key_path).public_key().public_numbers()
     randoms = [secrets.token_bytes(16) for _ in range(n_fields)]
 
-    # The MSO-style digest list is deterministic given the randoms, so it can
-    # be computed BEFORE running the circuit and blinded with the fork of
-    # rust-blind-rsa-signatures (which exposes the PSS salt and the blinding
-    # secret): the crate's blind_msg is the independent reference the circuit
-    # output is checked against, exactly as in the original experiment.
-    message = mso_message(payload, items, entries, randoms, namespace,
-                          max_key_len, max_value_len)
+    # The salted digest list is deterministic given the randoms, so the
+    # SD-JWT JWS signing input derived from it can be computed BEFORE running
+    # the circuit and blinded with the fork of rust-blind-rsa-signatures
+    # (which exposes the PSS salt and the blinding secret): the crate's
+    # blind_msg is the independent reference the circuit output is checked
+    # against, exactly as in the original experiment.
+    digest_list = mso_message(payload, items, entries, randoms, namespace,
+                              max_key_len, max_value_len)
+    message = sdjwt_signing_input(digest_list)
     Path(message_out).write_bytes(message)
 
     if not Path(notary_bin).exists():
@@ -112,8 +115,11 @@ def prepare(cred, path=(),
     examples = Path(examples_dir)
     (examples / "cwt_input.json").write_text(json.dumps(inputs, indent=2))
 
+    hdr_b64 = b64url(SDJWT_HEADER)
     template = (examples / "cwt_test.template.circom").read_text()
     circuit = (template
+               .replace("{{HDR_B64_LEN}}", str(len(hdr_b64)))
+               .replace("{{HDR_B64_BYTES}}", ", ".join(str(b) for b in hdr_b64))
                .replace("{{PAYLOAD_LEN}}", str(len(payload)))
                .replace("{{PROT_LEN}}", str(len(cred["prot"])))
                .replace("{{MAX_ITEMS}}", str(len(items)))
@@ -127,6 +133,7 @@ def prepare(cred, path=(),
 
     return {
         "expected_message": message,
+        "digest_list": digest_list,
         "expected_blind_msg": bytes(blind_ctx["blind_msg"]),
         "n_fields": n_fields,
         "namespace": bytes(namespace),

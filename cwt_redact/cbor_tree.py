@@ -267,3 +267,34 @@ def mso_message(buf, items, entries, randoms, namespace,
                             raw(buf, items, vi), max_key_len, max_value_len)
         msg += bytes([i]) + hashlib.sha256(pre).digest()
     return msg
+
+
+# --- SD-JWT envelope (mirror of examples/sd_jwt_envelope.circom) ---
+
+SDJWT_HEADER = b'{"alg":"PS256","typ":"dc+sd-jwt"}'
+
+
+def b64url(data: bytes) -> bytes:
+    """Unpadded base64url (RFC 7515 encoding)."""
+    import base64
+    return base64.urlsafe_b64encode(data).rstrip(b"=")
+
+
+def sdjwt_payload(digests) -> bytes:
+    """{"_sd":["<b64url(d)>", ...],"_sd_alg":"sha-256"} — digest order is the
+    digestID order of the salted digest list."""
+    sd = b",".join(b'"' + b64url(d) + b'"' for d in digests)
+    return b'{"_sd":[' + sd + b'],"_sd_alg":"sha-256"}'
+
+
+def sdjwt_signing_input(digest_list: bytes) -> bytes:
+    """JWS signing input b64url(header) || '.' || b64url(payload) of the
+    SD-JWT whose _sd array carries the digests of the salted digest list
+    (the byte-exact reference of SdJwtSigningInput in-circuit). This is the
+    message that gets PSS-encoded, blinded and blind-signed."""
+    ns_len = digest_list[0]
+    n_fields = digest_list[1 + ns_len]
+    base = 2 + ns_len
+    digests = [digest_list[base + i * 33 + 1: base + i * 33 + 33]
+               for i in range(n_fields)]
+    return b64url(SDJWT_HEADER) + b"." + b64url(sdjwt_payload(digests))
